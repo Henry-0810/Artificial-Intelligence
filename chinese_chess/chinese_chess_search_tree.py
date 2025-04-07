@@ -289,22 +289,29 @@ class CurrentBoard:
 
 class SearchTreeNode:
     def __init__(self, board_instance, playing_as, ply=0):
+        # Store the node properties
         self.children = []
         self.value_is_assigned = False
         self.ply_depth = ply
         self.current_board = board_instance
         self.move_for = playing_as
 
+        # Define how deep we want to search
+        # I'm using 4 because it gives a decent balance between AI strength and speed
         MAX_PLY_DEPTH = 4
         board_state = board_instance.state_of_board()
 
+        # Only expand the node if it's not a terminal state and we haven't reached max depth
         if board_state == "U" and ply < MAX_PLY_DEPTH:
             self.generate_children()
         else:
+            # For terminal nodes or max depth, evaluate the position
             self.value = self.evaluate_terminal_state(board_state)
             self.value_is_assigned = True
 
     def evaluate_terminal_state(self, board_state):
+        # Score terminal positions
+        # Draw = 0, win = 1, loss = -1
         if board_state == "D":
             return 0
         elif board_state == f"{self.move_for}_WIN":
@@ -312,18 +319,60 @@ class SearchTreeNode:
         else:
             return -1
 
-    def min_max_value(self):
+    def min_max_value(self, alpha=-float("inf"), beta=float("inf")):
+        """
+        Alpha-beta pruning version of minimax algorithm
+        Alpha is the best value the maximizing player has found
+        Beta is the best value the minimizing player has found
+        """
+        # Return cached value if already calculated
         if self.value_is_assigned:
             return self.value
-        child_values = [child.min_max_value() for child in self.children]
-        self.value = (
-            max(child_values) if (self.ply_depth % 2) == 0 else min(child_values)
-        )
+
+        # Check if maximizing or minimizing player's turn
+        if (self.ply_depth % 2) == 0:  # Maximizing player's turn
+            self.value = -float("inf")  # Start with worst possible value
+
+            # Look at all children and find the best move
+            for child in self.children:
+                # Get child's value and update our best value
+                self.value = max(self.value, child.min_max_value(alpha, beta))
+
+                # Update alpha (best for maximizing player)
+                alpha = max(alpha, self.value)
+
+                # Prune if we found a path that's too good for opponent to allow
+                if alpha >= beta:
+                    break  # Beta cutoff - opponent won't allow this path
+        else:  # Minimizing player's turn
+            self.value = float("inf")  # Start with worst possible value
+
+            # Look at all children and find the best move
+            for child in self.children:
+                # Get child's value and update our best value
+                self.value = min(self.value, child.min_max_value(alpha, beta))
+
+                # Update beta (best for minimizing player)
+                beta = min(beta, self.value)
+
+                # Prune if we found a path that's too good for opponent to allow
+                if beta <= alpha:
+                    break  # Alpha cutoff - opponent won't allow this path
+
+        # Cache the value so we don't recalculate
         self.value_is_assigned = True
         return self.value
 
     def generate_children(self):
-        for next_board in self.current_board.all_possible_moves(self.move_for):
+        """
+        Create all possible move nodes from this position
+        Sort them to improve alpha-beta pruning efficiency
+        """
+        # Create all possible next positions
+        possible_moves = self.current_board.all_possible_moves(self.move_for)
+
+        # Create child nodes for each move
+        for next_board in possible_moves:
             self.children.append(
                 SearchTreeNode(
                     next_board,
@@ -331,3 +380,45 @@ class SearchTreeNode:
                     self.ply_depth + 1,
                 )
             )
+
+        # Sort moves to improve pruning efficiency
+        # For maximizer, try highest value moves first
+        # For minimizer, try lowest value moves first
+        is_maximizing = self.ply_depth % 2 == 0
+
+        # Do a preliminary evaluation of each child to help with sorting
+        for child in self.children:
+            if not child.value_is_assigned:
+                # Just use a simple heuristic for quick sorting
+                # Capturing opponent's piece is good, so count material difference
+                red_material = black_material = 0
+                piece_values = {
+                    "K": 1000,
+                    "R": 9,
+                    "H": 4,
+                    "C": 4.5,
+                    "A": 2,
+                    "E": 2,
+                    "S": 1,
+                }
+
+                for r in range(10):
+                    for c in range(9):
+                        piece = child.current_board.board[r][c]
+                        if piece != ".":
+                            piece_type = piece[1]
+                            piece_worth = piece_values.get(piece_type, 0)
+                            if piece[0] == "R":
+                                red_material += piece_worth
+                            else:
+                                black_material += piece_worth
+
+                if self.move_for == "R":
+                    child.value = (red_material - black_material) / 100.0
+                else:
+                    child.value = (black_material - red_material) / 100.0
+
+                child.value_is_assigned = True
+
+        # Sort children for better pruning efficiency
+        self.children.sort(key=lambda x: x.value, reverse=is_maximizing)
