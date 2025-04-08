@@ -5,13 +5,21 @@ def load_scenario(index):
     board = [["." for _ in range(9)] for _ in range(10)]
 
     if index == 1:
-        board[0][3] = "BA"
-        board[1][4] = "BA"
-        board[1][5] = "BK"
+        # board[0][3] = "BA"
+        # board[1][4] = "BA"
+        # board[1][5] = "BK"
 
-        board[2][2] = "RS"
-        board[3][3] = "RS"
-        board[9][4] = "RK"
+        # board[2][2] = "RS"
+        # board[3][3] = "RS"
+        # board[9][4] = "RK"
+
+        board[9][3] = "RA"  # Advisor
+        board[8][4] = "RA"  # Advisor
+        board[8][5] = "RK"  # King
+
+        board[7][2] = "BS"  # Soldier
+        board[6][3] = "BS"  # Soldier
+        board[0][4] = "BK"  # King
 
     elif index == 2:
         board[0][4] = "BK"
@@ -297,8 +305,8 @@ class SearchTreeNode:
         self.move_for = playing_as
 
         # Define how deep we want to search
-        # I'm using 4 because it gives a decent balance between AI strength and speed
-        MAX_PLY_DEPTH = 4
+        # Increased depth helps with endgames
+        MAX_PLY_DEPTH = 5
         board_state = board_instance.state_of_board()
 
         # Only expand the node if it's not a terminal state and we haven't reached max depth
@@ -330,36 +338,27 @@ class SearchTreeNode:
             return self.value
 
         # Check if maximizing or minimizing player's turn
-        if (self.ply_depth % 2) == 0:  # Maximizing player's turn
-            self.value = -float("inf")  # Start with worst possible value
+        if (self.ply_depth % 2) == 0:
+            self.value = -float("inf")
 
-            # Look at all children and find the best move
             for child in self.children:
-                # Get child's value and update our best value
                 self.value = max(self.value, child.min_max_value(alpha, beta))
 
-                # Update alpha (best for maximizing player)
                 alpha = max(alpha, self.value)
 
-                # Prune if we found a path that's too good for opponent to allow
                 if alpha >= beta:
-                    break  # Beta cutoff - opponent won't allow this path
-        else:  # Minimizing player's turn
-            self.value = float("inf")  # Start with worst possible value
+                    break
+        else:
+            self.value = float("inf")
 
-            # Look at all children and find the best move
             for child in self.children:
-                # Get child's value and update our best value
                 self.value = min(self.value, child.min_max_value(alpha, beta))
 
-                # Update beta (best for minimizing player)
                 beta = min(beta, self.value)
 
-                # Prune if we found a path that's too good for opponent to allow
                 if beta <= alpha:
-                    break  # Alpha cutoff - opponent won't allow this path
+                    break
 
-        # Cache the value so we don't recalculate
         self.value_is_assigned = True
         return self.value
 
@@ -386,39 +385,153 @@ class SearchTreeNode:
         # For minimizer, try lowest value moves first
         is_maximizing = self.ply_depth % 2 == 0
 
-        # Do a preliminary evaluation of each child to help with sorting
+        # Pre-evaluate each child to help with sorting
         for child in self.children:
             if not child.value_is_assigned:
-                # Just use a simple heuristic for quick sorting
-                # Capturing opponent's piece is good, so count material difference
-                red_material = black_material = 0
-                piece_values = {
-                    "K": 1000,
-                    "R": 9,
-                    "H": 4,
-                    "C": 4.5,
-                    "A": 2,
-                    "E": 2,
-                    "S": 1,
-                }
-
-                for r in range(10):
-                    for c in range(9):
-                        piece = child.current_board.board[r][c]
-                        if piece != ".":
-                            piece_type = piece[1]
-                            piece_worth = piece_values.get(piece_type, 0)
-                            if piece[0] == "R":
-                                red_material += piece_worth
-                            else:
-                                black_material += piece_worth
-
-                if self.move_for == "R":
-                    child.value = (red_material - black_material) / 100.0
-                else:
-                    child.value = (black_material - red_material) / 100.0
-
+                # Score based on improved evaluation function
+                child.value = self.evaluate_position(child.current_board)
                 child.value_is_assigned = True
 
         # Sort children for better pruning efficiency
         self.children.sort(key=lambda x: x.value, reverse=is_maximizing)
+
+    def evaluate_position(self, board):
+        """
+        Improved evaluation function with endgame knowledge
+        """
+        # Material evaluation
+        red_material = black_material = 0
+        piece_values = {
+            "K": 1000,
+            "R": 9,
+            "H": 4,
+            "C": 4.5,
+            "A": 2,
+            "E": 2,
+            "S": 1,
+        }
+
+        # Position evaluation
+        red_position = black_position = 0
+
+        # Get kings' positions
+        red_king_r, red_king_c = board.get_king_position("R")
+        black_king_r, black_king_c = board.get_king_position("B")
+
+        # Count material and evaluate positions
+        for r in range(10):
+            for c in range(9):
+                piece = board.board[r][c]
+                if piece != ".":
+                    piece_type = piece[1]
+                    piece_worth = piece_values.get(piece_type, 0)
+                    if piece[0] == "R":
+                        red_material += piece_worth
+
+                        # Endgame specific: Reward positions closer to enemy king
+                        if piece_type in ["A", "S"]:
+                            distance_to_enemy = abs(r - black_king_r) + abs(
+                                c - black_king_c
+                            )
+                            red_position += (10 - distance_to_enemy) * 0.1
+
+                    else:  # Black pieces
+                        black_material += piece_worth
+
+                        # Endgame specific: Reward positions closer to enemy king
+                        if piece_type in ["A", "S"]:
+                            distance_to_enemy = abs(r - red_king_r) + abs(
+                                c - red_king_c
+                            )
+                            black_position += (10 - distance_to_enemy) * 0.1
+
+        # King safety evaluation
+        red_king_safety = black_king_safety = 0
+
+        # Count defenders around king
+        red_defenders = self.count_defenders(board, "R", red_king_r, red_king_c)
+        black_defenders = self.count_defenders(board, "B", black_king_r, black_king_c)
+
+        red_king_safety = red_defenders * 0.2
+        black_king_safety = black_defenders * 0.2
+
+        # Reward kings in the center of their palaces in endgames
+        if red_king_c == 4:
+            red_king_safety += 0.1
+
+        if black_king_c == 4:
+            black_king_safety += 0.1
+
+        # Endgame specific: King opposition
+        king_file_distance = abs(red_king_c - black_king_c)
+
+        if self.is_endgame(board):
+            # In king vs king endgames, reward opposition
+            if king_file_distance == 0:
+                if self.move_for == "R":
+                    # Check if it's an odd number of rows between kings (good opposition)
+                    if (abs(red_king_r - black_king_r) % 2) == 1:
+                        red_position += 0.3
+                else:
+                    if (abs(red_king_r - black_king_r) % 2) == 1:
+                        black_position += 0.3
+
+            # Reward central king position in pure king endgames
+            if self.is_king_only_endgame(board):
+                if self.move_for == "R":
+                    # Kings closer to center are better
+                    center_dist_red = abs(red_king_c - 4)
+                    red_position += (4 - center_dist_red) * 0.05
+                else:
+                    center_dist_black = abs(black_king_c - 4)
+                    black_position += (4 - center_dist_black) * 0.05
+
+        # Check status
+        if board.is_king_in_check("R"):
+            red_king_safety -= 0.5
+
+        if board.is_king_in_check("B"):
+            black_king_safety -= 0.5
+
+        # Calculate final score
+        red_score = red_material + red_position + red_king_safety
+        black_score = black_material + black_position + black_king_safety
+
+        # Return normalized score from perspective of moving player
+        if self.move_for == "R":
+            return (red_score - black_score) / 100.0
+        else:
+            return (black_score - red_score) / 100.0
+
+    def count_defenders(self, board, player, king_r, king_c):
+        """Count pieces defending the king"""
+        count = 0
+        for r in range(max(0, king_r - 1), min(10, king_r + 2)):
+            for c in range(max(0, king_c - 1), min(9, king_c + 2)):
+                if (
+                    board.board[r][c] != "."
+                    and board.board[r][c][0] == player
+                    and board.board[r][c][1] != "K"
+                ):
+                    count += 1
+        return count
+
+    def is_endgame(self, board):
+        """Check if the position is an endgame"""
+        piece_count = 0
+        for r in range(10):
+            for c in range(9):
+                if board.board[r][c] != ".":
+                    piece_count += 1
+        return piece_count <= 6
+
+    def is_king_only_endgame(self, board):
+        """Check if it's a king vs king (maybe with advisors) endgame"""
+        has_non_royal = False
+        for r in range(10):
+            for c in range(9):
+                piece = board.board[r][c]
+                if piece != "." and piece[1] not in ["K", "A"]:
+                    has_non_royal = True
+                    break
+        return not has_non_royal
