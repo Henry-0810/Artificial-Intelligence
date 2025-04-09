@@ -5,21 +5,21 @@ def load_scenario(index):
     board = [["." for _ in range(9)] for _ in range(10)]
 
     if index == 1:
-        # board[0][3] = "BA"
-        # board[1][4] = "BA"
-        # board[1][5] = "BK"
+        board[0][3] = "BA"
+        board[1][4] = "BA"
+        board[1][5] = "BK"
 
-        # board[2][2] = "RS"
-        # board[3][3] = "RS"
-        # board[9][4] = "RK"
+        board[2][2] = "RS"
+        board[3][3] = "RS"
+        board[9][4] = "RK"
 
-        board[9][3] = "RA"  # Advisor
-        board[8][4] = "RA"  # Advisor
-        board[8][5] = "RK"  # King
+        # board[9][3] = "RA"  # Advisor
+        # board[8][4] = "RA"  # Advisor
+        # board[8][5] = "RK"  # King
 
-        board[7][2] = "BS"  # Soldier
-        board[6][3] = "BS"  # Soldier
-        board[0][4] = "BK"  # King
+        # board[7][2] = "BS"  # Soldier
+        # board[6][3] = "BS"  # Soldier
+        # board[0][4] = "BK"  # King
 
     elif index == 2:
         board[0][4] = "BK"
